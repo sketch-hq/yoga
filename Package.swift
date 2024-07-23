@@ -23,9 +23,16 @@ let package = Package(
                 "yoga"
             ],
             publicHeadersPath: ".",
-            cxxSettings: [
-                .headerSearchPath(".")
-            ]
+	        cSettings: [
+	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
+	        ],
+	        cxxSettings: [
+	          .headerSearchPath("."),
+	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
+	        ],
+	        linkerSettings: [
+	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
+	        ]
         )
     ],
     cxxLanguageStandard: CXXLanguageStandard(rawValue: "c++20")
