@@ -23,15 +23,8 @@ let package = Package(
                 "yoga"
             ],
             publicHeadersPath: ".",
-	        cSettings: [
-	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
-	        ],
 	        cxxSettings: [
-	          .headerSearchPath("."),
-	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
-	        ],
-	        linkerSettings: [
-	          .unsafeFlags(["-fsanitize=address"])  // for Integration tests we need asan for .library too
+	          .headerSearchPath(".")
 	        ]
         )
     ],
