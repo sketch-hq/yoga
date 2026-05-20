@@ -510,7 +510,8 @@ class YG_EXPORT Style {
 
   float computeGapForAxis(FlexDirection axis, float ownerSize) const {
     auto gap = isRow(axis) ? computeColumnGap() : computeRowGap();
-    return maxOrDefined(gap.resolve(ownerSize).unwrap(), 0.0f);
+    auto unwrappedGap = gap.resolve(ownerSize).unwrap();
+    return isDefined(unwrappedGap) ? unwrappedGap : 0.0f;
   }
 
   bool flexStartMarginIsAuto(FlexDirection axis, Direction direction) const {
