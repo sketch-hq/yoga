@@ -99,10 +99,8 @@ static void computeFlexBasisForChild(
         (child->getConfig()->isExperimentalFeatureEnabled(
              ExperimentalFeature::WebFlexBasis) &&
          child->getLayout().computedFlexBasisGeneration != generationCount)) {
-      const FloatOptional paddingAndBorder = FloatOptional(
-          paddingAndBorderForAxis(child, mainAxis, direction, ownerWidth));
       child->setLayoutComputedFlexBasis(
-          yoga::maxOrDefined(resolvedFlexBasis, paddingAndBorder));
+          yoga::maxOrDefined(resolvedFlexBasis, FloatOptional(0)));
     }
   } else if (isMainAxisRow && isRowStyleDimDefined) {
     // The width is definite, so use that as the flex basis.
@@ -255,7 +253,7 @@ static void computeFlexBasisForChild(
 
     child->setLayoutComputedFlexBasis(FloatOptional(yoga::maxOrDefined(
         child->getLayout().measuredDimension(dimension(mainAxis)),
-        paddingAndBorderForAxis(child, mainAxis, direction, ownerWidth))));
+        0.0f)));
   }
   child->setLayoutComputedFlexBasisGeneration(generationCount);
 }
@@ -629,7 +627,6 @@ static float distributeFreeSpaceSecondPass(
     LayoutData& layoutMarkerData,
     const uint32_t depth,
     const uint32_t generationCount) {
-  float childFlexBasis = 0;
   float flexShrinkScaledFactor = 0;
   float flexGrowFactor = 0;
   float deltaFreeSpace = 0;
@@ -637,14 +634,9 @@ static float distributeFreeSpaceSecondPass(
   const bool isNodeFlexWrap = node->style().flexWrap() != Wrap::NoWrap;
 
   for (auto currentLineChild : flexLine.itemsInFlow) {
-    childFlexBasis = boundAxisWithinMinAndMax(
-                         currentLineChild,
-                         direction,
-                         mainAxis,
-                         currentLineChild->getLayout().computedFlexBasis,
-                         mainAxisOwnerSize,
-                         ownerWidth)
-                         .unwrap();
+    // Use the child's raw flex basis as our starting point. Min/max clamping
+    // happens later with calls to boundAxis.
+    const float childFlexBasis = currentLineChild->getLayout().computedFlexBasis.unwrap();
     float updatedMainSize = childFlexBasis;
 
     if (yoga::isDefined(flexLine.layout.remainingFreeSpace) &&
@@ -825,14 +817,9 @@ static void distributeFreeSpaceFirstPass(
   float deltaFreeSpace = 0;
 
   for (auto currentLineChild : flexLine.itemsInFlow) {
-    float childFlexBasis = boundAxisWithinMinAndMax(
-                               currentLineChild,
-                               direction,
-                               mainAxis,
-                               currentLineChild->getLayout().computedFlexBasis,
-                               mainAxisOwnerSize,
-                               ownerWidth)
-                               .unwrap();
+    // Use the child's raw flex basis as our starting point. Min/max clamping
+    // happens later with calls to boundAxis.
+    const float childFlexBasis = currentLineChild->getLayout().computedFlexBasis.unwrap();
 
     if (flexLine.layout.remainingFreeSpace < 0) {
       flexShrinkScaledFactor =
