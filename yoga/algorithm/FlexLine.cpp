@@ -86,20 +86,7 @@ FlexLine calculateFlexLine(
 
     sizeConsumedIncludingMinConstraint += flexBasisWithMinAndMaxConstraints +
         childMarginMainAxis + childLeadingGapMainAxis;
-    // If the node is flexible then use the child's 'raw' computed flex basis
-    // so filling nodes with the same flex basis consume the same size. Any
-    // min/max constraints are applied later during actual distribution of the
-    // available space. We clamp the computed flex basis to the node's max just
-    // in case it's been set larger.
-    //
-    // Non-flexible items use their fixed size as their flex basis (see
-    // computeFlexBasisForChild) so we use the clamped value here since that's
-    // exactly how much space they will consume.
-    const float flexBasisForDistribution =
-      child->isNodeFlexible()
-          ? yoga::minOrDefined(child->getLayout().computedFlexBasis.unwrap(), flexBasisWithMinAndMaxConstraints)
-          : flexBasisWithMinAndMaxConstraints;
-    sizeConsumed += flexBasisForDistribution + childMarginMainAxis +
+    sizeConsumed += flexBasisWithMinAndMaxConstraints + childMarginMainAxis +
         childLeadingGapMainAxis;
 
     if (child->isNodeFlexible()) {
