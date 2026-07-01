@@ -47,6 +47,7 @@ xcuserdata/
 *.ipa
 *.dSYM.zip
 *.dSYM
+.swiftpm/
 
 # CocoaPods
 #
