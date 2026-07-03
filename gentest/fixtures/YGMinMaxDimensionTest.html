@@ -12,9 +12,13 @@
   <div style="flex-grow: 1;"></div>
 </div>
 
-<!-- TODO: Yoga's behavior is no longer in line with Chromium  -->
-<div id="min_width" data-disabled="true" style="width: 100px; height: 100px; flex-direction: row">
+<div id="min_width" style="width: 100px; height: 100px; flex-direction: row">
   <div style="flex-grow: 1; min-width: 60px;"></div>
+  <div style="flex-grow: 1;"></div>
+</div>
+
+<div id="flex_grow_with_non_binding_min_width" style="width: 100px; height: 50px; flex-direction: row">
+  <div style="flex-grow: 1; min-width: 10px;"></div>
   <div style="flex-grow: 1;"></div>
 </div>
 
