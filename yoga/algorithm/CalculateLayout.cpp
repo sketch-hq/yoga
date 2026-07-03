@@ -626,23 +626,30 @@ static std::vector<float> resolveFlexLengths(
     const float mainAxisOwnerSize,
     const float availableInnerMainDim,
     const float availableInnerWidth) {
+
+  // Determine if we're in a growth phase, or a shrink phase.
+  // remainingFreeSpace will have been set using each child's outer
+  // hypothetical main size when the line was calculated.
   const bool isGrowPhase = flexLine.layout.remainingFreeSpace >= 0;
   const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
-  const size_t n = flexLine.itemsInFlow.size();
+  const size_t itemsInLine = flexLine.itemsInFlow.size();
 
+  // Tracks the state of an item as we repeatedly iterate the line.
   struct ItemState {
-    bool frozen = false;
-    float resolvedSize = 0.0f;
+    bool frozen = false; // Is the item's size frozen?
+    float resolvedSize = 0.0f; // The current size of the item (may still change is froze == false).
   };
-  std::vector<ItemState> states(n);
+  std::vector<ItemState> states(itemsInLine);
 
-  // Pre-freeze items that cannot participate in this phase (zero grow factor
-  // during grow, zero shrink factor during shrink). These are immediately frozen
-  // at their hypothetical main size. calculateFlexLine already used
-  // flexBasisWithMinAndMaxConstraints for non-flexible items in sizeConsumed, so
-  // their resolvedSize equals that value and their delta to cumulativeDelta is zero.
-  float cumulativeDelta = 0.0f;
-  for (size_t i = 0; i < n; i++) {
+  // How much space we take from or give back to the available space on the
+  // line.
+  float spaceDelta = 0.0f;
+
+  // Pre-freeze items that don't have flexible main axis sizes (spec step 3).
+  // These items are immediately frozen at their hypothetical main size. When
+  // the available space for the line was calculated these items were already
+  // factored in so we don't need to track them in spaceDelta.
+  for (size_t i = 0; i < itemsInLine; i++) {
     auto* child = flexLine.itemsInFlow[i];
     const bool canParticipate = isGrowPhase ? child->resolveFlexGrow() > 0.0f
                                             : child->resolveFlexShrink() > 0.0f;
@@ -660,7 +667,10 @@ static std::vector<float> resolveFlexLengths(
     }
   }
 
+  // Start our main loop (step 5 in the spec).
   while (true) {
+    // Check if all the sizes are frozen, and if they are we're done (spec step
+    // 5a).
     bool allFrozen = true;
     for (const auto& s : states) {
       if (!s.frozen) {
@@ -672,30 +682,51 @@ static std::vector<float> resolveFlexLengths(
       break;
     }
 
-    // Remaining free space for this iteration (spec step 5b):
+    // Calculate how much free space we have for this iteration (spec step 5b):
     // remainingFreeSpace_k = initialFreeSpace - Σ(resolvedSize_i - rawBasis_i)
     // for all flexible items frozen so far.
-    const float currentFreeSpace = initialFreeSpace - cumulativeDelta;
+    const float currentFreeSpace = initialFreeSpace - spaceDelta;
 
-    // Sum of flex factors for unfrozen items only.
-    float totalFactor = 0.0f;
-    for (size_t i = 0; i < n; i++) {
+    // Sum the flex factors of the unfrozen items. Two different sums are
+    // needed:
+    //
+    //  - sumRawFactors is the sum of the raw flex-grow/shrink factors. The spec
+    //    defines the step 5b "sum of factors < 1" scaling below in terms of
+    //    these raw factors.
+    //  - sumScaledFactors is the denominator used to distribute space in step
+    //    5c below. In the shrink phase the distribution is proportional to the
+    //    ratio derived from each item's scaled shrink factor. In the grow
+    //    phase there is no such weighting, so it ends up identical to
+    //    sumRawFactors.
+    float sumRawFactors = 0.0f;
+    float sumScaledFactors = 0.0f;
+    for (size_t i = 0; i < itemsInLine; i++) {
       if (states[i].frozen) {
         continue;
       }
       auto* child = flexLine.itemsInFlow[i];
       if (isGrowPhase) {
-        totalFactor += child->resolveFlexGrow();
+        const float grow = child->resolveFlexGrow();
+        sumRawFactors += grow;
+        sumScaledFactors += grow;
       } else {
-        totalFactor +=
-            -child->resolveFlexShrink() *
-            child->getLayout().computedFlexBasis.unwrap();
+        const float shrink = child->resolveFlexShrink();
+        sumRawFactors += shrink;
+        // Scaled shrink factor (flex-shrink * flex base size). Kept positive;
+        // the shrink direction comes from the negative free space, not the sign
+        // of this factor.
+        sumScaledFactors +=
+            shrink * child->getLayout().computedFlexBasis.unwrap();
       }
     }
 
-    if (totalFactor == 0.0f) {
-      // No unfrozen item can flex; freeze all at their min/max-clamped basis.
-      for (size_t i = 0; i < n; i++) {
+    // Not strictly needed, but guards against a division by zero in step 5c
+    // (which divides by sumScaledFactors). We shouldn't end up here since we
+    // pre-freeze all inflexible items (so neither sumFactors should ever be 0),
+    // but just in case we freeze all unfrozen items at their clamped basis.
+    // Better than crashing.
+    if (sumScaledFactors == 0.0f) {
+      for (size_t i = 0; i < itemsInLine; i++) {
         if (states[i].frozen) {
           continue;
         }
@@ -707,7 +738,7 @@ static std::vector<float> resolveFlexLengths(
             child->getLayout().computedFlexBasis.unwrap(),
             availableInnerMainDim,
             availableInnerWidth);
-        cumulativeDelta +=
+        spaceDelta +=
             states[i].resolvedSize -
             child->getLayout().computedFlexBasis.unwrap();
         states[i].frozen = true;
@@ -715,12 +746,13 @@ static std::vector<float> resolveFlexLengths(
       break;
     }
 
-    // When the sum of unfrozen flex factors is less than 1, scale the initial
-    // free space by that sum rather than using the full remaining free space
+    // When the sum of the unfrozen items' raw flex factors is less than 1,
+    // scale the initial free space by that sum, and use it as the remaining
+    // free space if it is smaller in magnitude than the current free space
     // (spec step 5b).
     float effectiveFreeSpace = currentFreeSpace;
-    if (std::abs(totalFactor) < 1.0f) {
-      const float scaled = initialFreeSpace * totalFactor;
+    if (std::abs(sumRawFactors) < 1.0f) {
+      const float scaled = initialFreeSpace * sumRawFactors;
       if (std::abs(scaled) < std::abs(currentFreeSpace)) {
         effectiveFreeSpace = scaled;
       }
@@ -731,10 +763,10 @@ static std::vector<float> resolveFlexLengths(
       float clampedTarget;
       float amount; // clamped - raw; positive = min violation, negative = max
     };
-    std::vector<Violation> violations(n, {0.0f, 0.0f});
+    std::vector<Violation> violations(itemsInLine, {0.0f, 0.0f});
     float totalViolation = 0.0f;
 
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < itemsInLine; i++) {
       if (states[i].frozen) {
         continue;
       }
@@ -744,10 +776,11 @@ static std::vector<float> resolveFlexLengths(
       float rawTarget;
       if (isGrowPhase) {
         rawTarget = basis +
-            effectiveFreeSpace / totalFactor * child->resolveFlexGrow();
+            effectiveFreeSpace / sumScaledFactors * child->resolveFlexGrow();
       } else {
-        const float scaledFactor = -child->resolveFlexShrink() * basis;
-        rawTarget = basis + effectiveFreeSpace / totalFactor * scaledFactor;
+        const float scaledFactor = child->resolveFlexShrink() * basis;
+        rawTarget =
+            basis + effectiveFreeSpace / sumScaledFactors * scaledFactor;
       }
 
       const float clamped = boundAxis(
@@ -766,7 +799,7 @@ static std::vector<float> resolveFlexLengths(
     // negative total → freeze max-violated items only;
     // zero → freeze all (no violations remain).
     bool anyFrozen = false;
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < itemsInLine; i++) {
       if (states[i].frozen) {
         continue;
       }
@@ -775,7 +808,7 @@ static std::vector<float> resolveFlexLengths(
           (totalViolation < 0.0f && v < 0.0f) || totalViolation == 0.0f;
       if (freeze) {
         states[i].resolvedSize = violations[i].clampedTarget;
-        cumulativeDelta += violations[i].clampedTarget -
+        spaceDelta += violations[i].clampedTarget -
             flexLine.itemsInFlow[i]->getLayout().computedFlexBasis.unwrap();
         states[i].frozen = true;
         anyFrozen = true;
@@ -786,11 +819,11 @@ static std::vector<float> resolveFlexLengths(
     }
   }
 
-  std::vector<float> resolvedSizes(n);
-  for (size_t i = 0; i < n; i++) {
+  std::vector<float> resolvedSizes(itemsInLine);
+  for (size_t i = 0; i < itemsInLine; i++) {
     resolvedSizes[i] = states[i].resolvedSize;
   }
-  flexLine.layout.remainingFreeSpace = initialFreeSpace - cumulativeDelta;
+  flexLine.layout.remainingFreeSpace = initialFreeSpace - spaceDelta;
   return resolvedSizes;
 }
 
