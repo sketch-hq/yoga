@@ -639,13 +639,6 @@ static std::vector<float> resolveFlexLengths(
       !yoga::isDefined(availableInnerMainDim) ||
       availableInnerMainDim >= flexLine.sizeConsumedHypothetical;
 
-  // Calculate the free space to distribute (spec step 3). FlexLine has already
-  // computed this for us in exactly the way the spec requires (and to avoid
-  // any knock-on effects from not working with it we accept that dependency).
-  // Unlike the phase decision above, this uses each flexible item's _raw_ flex
-  // base size (see sizeConsumed in calculateFlexLine) instead of their
-  // hypothetical main size.
-  const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
   const size_t itemsInLine = flexLine.itemsInFlow.size();
 
   // Tracks the state of an item as we repeatedly iterate the line.
@@ -659,36 +652,54 @@ static std::vector<float> resolveFlexLengths(
   // line.
   float spaceDelta = 0.0f;
 
-  // Size inflexible items (spec step 2). Items which cannot flex in this phase
-  // (zero grow factor while growing, zero shrink factor while shrinking) are
-  // immediately frozen at their hypothetical main size.
+  // Size inflexible items (spec step 2). An item is frozen at its hypothetical
+  // main size it either cannot flex in this flex factor (zero grow factor while
+  // growing, or zero shrink factor while shrinking), or its flex base size
+  // overflows its hypothetical size
   for (size_t i = 0; i < itemsInLine; i++) {
     auto* child = flexLine.itemsInFlow[i];
-    const bool canParticipate = isGrowPhase ? child->resolveFlexGrow() > 0.0f
-                                            : child->resolveFlexShrink() > 0.0f;
-    if (!canParticipate) {
-      const float hypothetical =
-          boundAxisWithinMinAndMax(
-              child,
-              direction,
-              mainAxis,
-              child->getLayout().computedFlexBasis,
-              mainAxisOwnerSize,
-              ownerWidth)
-              .unwrap();
+    const float basis = child->getLayout().computedFlexBasis.unwrap();
+    const float hypothetical =
+        boundAxisWithinMinAndMax(
+            child,
+            direction,
+            mainAxis,
+            child->getLayout().computedFlexBasis,
+            mainAxisOwnerSize,
+            ownerWidth)
+            .unwrap();
+
+    const bool canFlex = isGrowPhase ? child->resolveFlexGrow() > 0.0f
+                                     : child->resolveFlexShrink() > 0.0f;
+    const bool basisBeyondHypothetical =
+        isGrowPhase ? basis > hypothetical : basis < hypothetical;
+
+    if (!canFlex || basisBeyondHypothetical) {
       states[i].frozen = true;
       states[i].resolvedSize = hypothetical;
 
-      // initialFreeSpace counted flexible items at their raw flex base size,
-      // but this item is now frozen at its hypothetical main size. Record the
-      // difference so the remaining free space stays consistent. Non-flexible
-      // items were already counted at their hypothetical size, so they need no
-      // adjustment.
+      // initialFreeSpace counts flexible items at their raw flex base size,
+      // but this item is now frozen at its _hypothetical_ main size. Record the
+      // difference in our running total of used space so the remaining free
+      // space stays consistent. Non-flexible items were already counted at
+      // their hypothetical size, so they need no adjustment. This is necessary
+      // to not break broader uses of remainingFreeSpace (by having it count
+      // items differently), and have future calculations in this function
+      // behave correctly.
       if (child->isNodeFlexible()) {
-        spaceDelta += hypothetical - child->getLayout().computedFlexBasis.unwrap();
+        spaceDelta += hypothetical - basis;
       }
     }
   }
+
+  // Calculate the free space to distribute (spec step 3). FlexLine has already
+  // computed this for us in exactly the way the spec requires (and to avoid
+  // any knock-on effects from not working with it we accept that dependency).
+  // Unlike the phase decision above, this uses each flexible item's _raw_ flex
+  // base size (see sizeConsumed in calculateFlexLine) instead of their
+  // hypothetical main size. This is why we do the extra bookkeeping in step 2
+  // to account for that difference in spaceDelta upfront.
+  const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
 
   // Start our main loop (step 4 in the spec).
   while (true) {
@@ -782,7 +793,7 @@ static std::vector<float> resolveFlexLengths(
     // Distribute the free space (spec step 4c) and compute each item's min/max
     // violation (spec step 4d) simultaneously for all unfrozen items.
     struct Violation {
-      float clampedTarget;
+      float clampedTarget; // The clamped value that was violated.
       float amount; // clamped - raw; positive = min violation, negative = max
     };
     std::vector<Violation> violations(itemsInLine, {0.0f, 0.0f});
