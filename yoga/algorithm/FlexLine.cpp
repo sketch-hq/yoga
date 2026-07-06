@@ -121,6 +121,7 @@ FlexLine calculateFlexLine(
   return FlexLine{
       .itemsInFlow = std::move(itemsInFlow),
       .sizeConsumed = sizeConsumed,
+      .sizeConsumedHypothetical = sizeConsumedIncludingMinConstraint,
       .numberOfAutoMargins = numberOfAutoMargins,
       .layout = FlexLineRunningLayout{
           totalFlexGrowFactors,

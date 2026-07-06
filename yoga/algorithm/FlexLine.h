@@ -23,8 +23,8 @@ struct FlexLineRunningLayout {
   // line. This is decremented as free space is distributed.
   float totalFlexShrinkScaledFactors{0.0f};
 
-  // The amount of available space within inner dimensions of the line which may
-  // still be distributed.
+  // The amount of available space within inner dimensions of the line (after
+  // subtracting `sizeConsumed`) which may still be distributed.
   float remainingFreeSpace{0.0f};
 
   // The size of the mainDim for the row after considering size, padding, margin
@@ -46,8 +46,12 @@ struct FlexLine {
   // Accumulation of the dimensions and margin of all the children on the
   // current line. This will be used in order to either set the dimensions of
   // the node if none already exist or to compute the remaining space left for
-  // the flexible children.
+  // the flexible children. Flexible items contribute their raw flex base size.
   const float sizeConsumed{0.0f};
+
+  // Like sizeConsumed, but every item (flexible or not) contributes its outer
+  // hypothetical main size (flex base size clamped to min/max).
+  const float sizeConsumedHypothetical{0.0f};
 
   // Number of edges along the line flow with an auto margin.
   const size_t numberOfAutoMargins{0};
