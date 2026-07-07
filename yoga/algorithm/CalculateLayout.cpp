@@ -637,7 +637,7 @@ static std::vector<float> resolveFlexLengths(
   // That comparison only makes sense when the container has a real main-axis
   // constraint. If the container is sized to its content, or its main size is
   // indefinite, there is nothing to overflow, so we always grow.
-  const bool isGrowPhase = sizeBasedOnContent ||
+  const bool usingFlexGrowFactor = sizeBasedOnContent ||
       !yoga::isDefined(availableInnerMainDim) ||
       availableInnerMainDim >= flexLine.sizeConsumedHypothetical;
 
@@ -686,10 +686,10 @@ static std::vector<float> resolveFlexLengths(
             ownerWidth)
             .unwrap();
 
-    const bool canFlex = isGrowPhase ? child->resolveFlexGrow() > 0.0f
+    const bool canFlex = usingFlexGrowFactor ? child->resolveFlexGrow() > 0.0f
                                      : child->resolveFlexShrink() > 0.0f;
     const bool basisBeyondHypothetical =
-        isGrowPhase ? basis > hypothetical : basis < hypothetical;
+        usingFlexGrowFactor ? basis > hypothetical : basis < hypothetical;
 
     if (!canFlex || basisBeyondHypothetical) {
       states[i].frozen = true;
@@ -714,10 +714,10 @@ static std::vector<float> resolveFlexLengths(
   // Calculate the free space to distribute (spec step 4). FlexLine has already
   // computed this for us in exactly the way the spec requires (and to avoid
   // any knock-on effects from not working with it we accept that dependency).
-  // Unlike the phase decision above, this uses each flexible item's _raw_ flex
-  // base size (see sizeConsumed in calculateFlexLine) instead of their
-  // hypothetical main size. This is why we do the extra bookkeeping in step 3
-  // to account for that difference in spaceDelta upfront.
+  // Unlike the flex factor decision above, this uses each flexible item's
+  // _raw_ flex base size (see sizeConsumed in calculateFlexLine) instead of
+  // their hypothetical main size. This is why we do the extra bookkeeping in
+  // step 3 to account for that difference in spaceDelta upfront.
   const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
 
   // - STEP 5
@@ -747,10 +747,10 @@ static std::vector<float> resolveFlexLengths(
     //    defines the step 5b "sum of flex factors < 1" scaling below in terms
     //    of these raw factors.
     //  - sumScaledFactors is the denominator used to distribute space in step
-    //    5c below. In the shrink phase the distribution is proportional to the
-    //    ratio derived from each item's scaled shrink factor. In the grow
-    //    phase it's not proportional like this so it ends up identical to
-    //    sumRawFactors.
+    //    5c below. When using the shrink flex factor the distribution is
+    //    proportional to the ratio derived from each item's scaled shrink
+    //    factor. When using the grow flex factor it's not proportional like
+    //    this so it ends up identical to sumRawFactors.
     float sumRawFactors = 0.0f;
     float sumScaledFactors = 0.0f;
     for (size_t i = 0; i < itemsInLine; i++) {
@@ -758,7 +758,7 @@ static std::vector<float> resolveFlexLengths(
         continue;
       }
       auto* child = flexLine.itemsInFlow[i];
-      if (isGrowPhase) {
+      if (usingFlexGrowFactor) {
         const float grow = child->resolveFlexGrow();
         sumRawFactors += grow;
         sumScaledFactors += grow;
@@ -798,7 +798,7 @@ static std::vector<float> resolveFlexLengths(
 
       float rawTarget;
       if (sumScaledFactors > 0.0f) {
-        if (isGrowPhase) {
+        if (usingFlexGrowFactor) {
           rawTarget = basis + (effectiveFreeSpace * (child->resolveFlexGrow() / sumScaledFactors));
         } else {
           const float scaledFlexShrinkFactor = child->resolveFlexShrink() * basis;
