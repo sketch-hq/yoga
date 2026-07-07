@@ -652,7 +652,7 @@ static std::vector<float> resolveFlexLengths(
   // line.
   float spaceDelta = 0.0f;
 
-  // Size inflexible items (spec step 2). An item is frozen at its hypothetical
+  // Size inflexible items (spec step 3). An item is frozen at its hypothetical
   // main size it either cannot flex in this flex factor (zero grow factor while
   // growing, or zero shrink factor while shrinking), or its flex base size
   // overflows its hypothetical size
@@ -692,19 +692,19 @@ static std::vector<float> resolveFlexLengths(
     }
   }
 
-  // Calculate the free space to distribute (spec step 3). FlexLine has already
+  // Calculate the free space to distribute (spec step 4). FlexLine has already
   // computed this for us in exactly the way the spec requires (and to avoid
   // any knock-on effects from not working with it we accept that dependency).
   // Unlike the phase decision above, this uses each flexible item's _raw_ flex
   // base size (see sizeConsumed in calculateFlexLine) instead of their
-  // hypothetical main size. This is why we do the extra bookkeeping in step 2
+  // hypothetical main size. This is why we do the extra bookkeeping in step 3
   // to account for that difference in spaceDelta upfront.
   const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
 
-  // Start our main loop (spec step 4).
+  // Start our main loop (spec step 5).
   while (true) {
     // Check if all the sizes are frozen, and if they are we're done (spec step
-    // 4a).
+    // 5a).
     bool allFrozen = true;
     for (const auto& s : states) {
       if (!s.frozen) {
@@ -716,17 +716,17 @@ static std::vector<float> resolveFlexLengths(
       break;
     }
 
-    // Calculate how much free space we have for this iteration (spec step 4b).
+    // Calculate how much free space we have for this iteration (spec step 5b).
     const float currentFreeSpace = initialFreeSpace - spaceDelta;
 
     // Sum the flex factors of the unfrozen items. Two different sums are
-    // needed for steps 4b and 4c:
+    // needed for steps 5b and 5c:
     //
     //  - sumRawFactors is the sum of the raw flex-grow/shrink factors. The spec
-    //    defines the step 4b "sum of flex factors < 1" scaling below in terms
+    //    defines the step 5b "sum of flex factors < 1" scaling below in terms
     //    of these raw factors.
     //  - sumScaledFactors is the denominator used to distribute space in step
-    //    4c below. In the shrink phase the distribution is proportional to the
+    //    5c below. In the shrink phase the distribution is proportional to the
     //    ratio derived from each item's scaled shrink factor. In the grow
     //    phase it's not proportional like this so it ends up identical to
     //    sumRawFactors.
@@ -744,7 +744,7 @@ static std::vector<float> resolveFlexLengths(
       } else {
         const float shrink = child->resolveFlexShrink();
         sumRawFactors += shrink;
-        // "Scaled shrink factor" in spec step 4c (flex-shrink * flex base
+        // "Scaled shrink factor" in spec step 5c (flex-shrink * flex base
         // size).
         sumScaledFactors += shrink * child->getLayout().computedFlexBasis.unwrap();
       }
@@ -753,7 +753,7 @@ static std::vector<float> resolveFlexLengths(
     // When the sum of the unfrozen items' raw flex factors is less than 1,
     // scale the initial free space by that sum, and use it as the remaining
     // free space if it is smaller in magnitude than the current free space
-    // (spec step 4b).
+    // (spec step 5b).
     float effectiveFreeSpace = currentFreeSpace;
     if (std::abs(sumRawFactors) < 1.0f) {
       const float scaled = initialFreeSpace * sumRawFactors;
@@ -762,9 +762,9 @@ static std::vector<float> resolveFlexLengths(
       }
     }
 
-    // Distribute the free space (spec step 4c) and compute each item's min/max
-    // violation (spec step 4d) simultaneously for all unfrozen items.
-    // Note: In step 4c the spec says "if the remaining free space is non-zero".
+    // Distribute the free space (spec step 5c) and compute each item's min/max
+    // violation (spec step 5d) simultaneously for all unfrozen items.
+    // Note: In step 5c the spec says "if the remaining free space is non-zero".
     // We handle this implicitly through the multiplication against
     // effectiveFreeSpace during the calculation.
     struct SpaceAllocation {
@@ -796,7 +796,7 @@ static std::vector<float> resolveFlexLengths(
       } else {
         // Nothing on the line can flex in this flex factor so there's nothing
         // to do — leave the item at its hypothetical main size. Given that we
-        // freeze inflexible items in step 2 the chance we'll get into this
+        // freeze inflexible items in step 3 the chance we'll get into this
         // situation is rare, but is possible with a > 0 shrink, and a basis of
         // 0.
         rawTarget = boundAxisWithinMinAndMax(
@@ -810,7 +810,7 @@ static std::vector<float> resolveFlexLengths(
       }
 
       // Fix and track min/max violations on our target main size (spec step
-      // 4d). boundAxis makes sure we're both within our min/max, and that we're
+      // 5d). boundAxis makes sure we're both within our min/max, and that we're
       // floored to our content box.
       const float clamped = boundAxis(
           child,
@@ -823,7 +823,7 @@ static std::vector<float> resolveFlexLengths(
       totalViolation += spaceAllocations[i].violationAmount;
     }
 
-    // Freeze over-flexed items according to spec step 4e's rules:
+    // Freeze over-flexed items according to spec step 5e's rules:
     // - If totalViolation is 0 freeze every item (no violations, or they cancel
     //   each other out).
     // - If totalViolation is > 0 freeze items with min violations
@@ -854,7 +854,7 @@ static std::vector<float> resolveFlexLengths(
     }
   }
 
-  // Spec step 5. We return the resolved sizes for each item so the next stage
+  // Spec step 6. We return the resolved sizes for each item so the next stage
   // of the algorithm can apply them to the nodes (and set the cross-axis size).
   // We also set remainingFreeSpace on the line to account for the space we
   // distributed across the items.
