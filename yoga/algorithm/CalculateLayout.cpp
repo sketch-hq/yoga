@@ -879,18 +879,15 @@ static std::vector<float> resolveFlexLengths(
   return resolvedSizes;
 }
 
-// Resolves the flexible lengths of the items on the line and lays each item
-// out.
+// Recursively resolves the flexible lengths of the items on the line and lays
+// each item out.
 //
-// First, resolveFlexLengths distributes the remaining space per the CSS Flexbox
-// spec (§9.7 "Resolve Flexible Lengths"), producing each item's final main-axis
-// size. Then this function applies those sizes: it computes each item's
-// cross-axis size (handling aspect-ratio and stretch), and recursively lays out
-// the child via calculateLayoutInternal.
-//
-// At the end of this function the child nodes would have the proper size
-// assigned to them.
-//
+// There's two main steps to this: resolving flexible lengths on the main axis,
+// and then resolving the cross axis lengths. Main axis resolution is done
+// according to section 9.7 of the CSS Flexbox spec. These main sizes then
+// feed into our calculations for cross-axis resolution before both sizes are
+// applied to the nodes. The function then recursively calculates the layout
+// for each child node.
 static void resolveFlexibleLength(
     yoga::Node* const node,
     FlexLine& flexLine,
@@ -910,9 +907,9 @@ static void resolveFlexibleLength(
     LayoutData& layoutMarkerData,
     const uint32_t depth,
     const uint32_t generationCount) {
-  // Resolve each item's main-axis size using the CSS spec net-violation
-  // algorithm. Updates flexLine.layout.remainingFreeSpace to the residual free
-  // space after all items are sized.
+
+  // Resolve each item's main-axis size. Also updates
+  // flexLine.layout.remainingFreeSpace after all items are sized.
   const std::vector<float> resolvedSizes = resolveFlexLengths(
       flexLine,
       direction,
