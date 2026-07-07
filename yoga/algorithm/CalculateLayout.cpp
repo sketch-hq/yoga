@@ -628,6 +628,8 @@ static std::vector<float> resolveFlexLengths(
     const float availableInnerWidth,
     const bool sizeBasedOnContent) {
 
+  // - STEP 1
+
   // Determine whether we're growing or shrinking (spec step 1). The items grow
   // if the sum of their outer hypothetical main sizes fits within the
   // container's inner main size, otherwise they shrink.
@@ -643,14 +645,20 @@ static std::vector<float> resolveFlexLengths(
 
   // Tracks the state of an item as we repeatedly iterate the line.
   struct ItemState {
-    bool frozen = false;         // Is the item's size frozen?
-    float resolvedSize = 0.0f;   // The current size of the item (may still change if not frozen).
-    float targetMainSize = 0.0f; // The (clamped) target main size for the node.
-    float violationAmount = NAN; // The amount by which targetMainSize was adjusted from the
-                                 // 'raw' size it was originally allocated so that it doesn't
-                                 // violate the node's min/max constraints.
-                                 // Positive for a min violation; negative for a max; 0 for
-                                 // no violation.
+    // Is the item's size frozen?
+    bool frozen = false;
+
+    // The current size of the item (may still change if not frozen).
+    float resolvedSize = 0.0f;
+
+    // The (clamped) target main size for the node.
+    float targetMainSize = 0.0f;
+
+    // The amount by which targetMainSize was adjusted from the 'raw' size it
+    // was originally allocated so that it doesn't violate the node's min/max
+    // constraints. Positive for a min violation; negative for a max; 0 for no
+    // violation.
+    float violationAmount = YGUndefined;
   };
   std::vector<ItemState> states(itemsInLine);
 
@@ -658,10 +666,13 @@ static std::vector<float> resolveFlexLengths(
   // line.
   float spaceDelta = 0.0f;
 
+  // (Step 2 isn't a "step".)
+  // - STEP 3
+
   // Size inflexible items (spec step 3). An item is frozen at its hypothetical
-  // main size if either cannot flex in this flex factor (zero grow factor while
-  // growing, or zero shrink factor while shrinking), or its flex base size
-  // is beyond its hypothetical size
+  // main size if it either cannot flex in this flex factor (zero grow factor
+  // while growing, or zero shrink factor while shrinking), or its flex base
+  // size is beyond its hypothetical size
   for (size_t i = 0; i < itemsInLine; i++) {
     auto* child = flexLine.itemsInFlow[i];
     const float basis = child->getLayout().computedFlexBasis.unwrap();
@@ -698,6 +709,8 @@ static std::vector<float> resolveFlexLengths(
     }
   }
 
+  // - STEP 4
+
   // Calculate the free space to distribute (spec step 4). FlexLine has already
   // computed this for us in exactly the way the spec requires (and to avoid
   // any knock-on effects from not working with it we accept that dependency).
@@ -706,6 +719,8 @@ static std::vector<float> resolveFlexLengths(
   // hypothetical main size. This is why we do the extra bookkeeping in step 3
   // to account for that difference in spaceDelta upfront.
   const float initialFreeSpace = flexLine.layout.remainingFreeSpace;
+
+  // - STEP 5
 
   // Start our main loop (spec step 5).
   while (true) {
@@ -850,6 +865,8 @@ static std::vector<float> resolveFlexLengths(
       }
     }
   }
+
+  // - STEP 6
 
   // Spec step 6. We return the resolved sizes for each item so the next stage
   // of the algorithm can apply them to the nodes (and set the cross-axis size).
