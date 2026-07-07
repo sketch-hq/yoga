@@ -749,7 +749,7 @@ static std::vector<float> resolveFlexLengths(
         sumScaledFactors += shrink * child->getLayout().computedFlexBasis.unwrap();
       }
     }
-    
+
     // When the sum of the unfrozen items' raw flex factors is less than 1,
     // scale the initial free space by that sum, and use it as the remaining
     // free space if it is smaller in magnitude than the current free space
@@ -764,12 +764,18 @@ static std::vector<float> resolveFlexLengths(
 
     // Distribute the free space (spec step 4c) and compute each item's min/max
     // violation (spec step 4d) simultaneously for all unfrozen items.
-    struct Violation {
-      float clampedTarget; // The clamped value that was violated.
-      float amount; // The amount by which clampedTarget was violated.
-                    // Positive for a min violation; negative for a max.
+    // Note: In step 4c the spec says "if the remaining free space is non-zero".
+    // We handle this implicitly through the multiplication against
+    // effectiveFreeSpace during the calculation.
+    struct SpaceAllocation {
+      float targetMainSize;  // The (clamped) target main size for the node.
+      float violationAmount; // The amount by which targetMainSize was adjusted from the
+                             // 'raw' size it was originally allocated so that it doesn't
+                             // violate the node's min/max constraints.
+                             // Positive for a min violation; negative for a max; 0 for
+                             // no violation.
     };
-    std::vector<Violation> violations(itemsInLine, {0.0f, 0.0f});
+    std::vector<SpaceAllocation> spaceAllocations(itemsInLine, {0.0f, 0.0f});
     float totalViolation = 0.0f;
 
     for (size_t i = 0; i < itemsInLine; i++) {
@@ -780,15 +786,32 @@ static std::vector<float> resolveFlexLengths(
       const float basis = child->getLayout().computedFlexBasis.unwrap();
 
       float rawTarget;
-      if (isGrowPhase) {
-        rawTarget = basis +
-            effectiveFreeSpace / sumScaledFactors * child->resolveFlexGrow();
+      if (sumScaledFactors > 0.0f) {
+        if (isGrowPhase) {
+          rawTarget = basis + (effectiveFreeSpace * (child->resolveFlexGrow() / sumScaledFactors));
+        } else {
+          const float scaledFlexShrinkFactor = child->resolveFlexShrink() * basis;
+          rawTarget = basis + (effectiveFreeSpace * (scaledFlexShrinkFactor / sumScaledFactors));
+        }
       } else {
-        const float scaledFactor = child->resolveFlexShrink() * basis;
-        rawTarget =
-            basis + effectiveFreeSpace / sumScaledFactors * scaledFactor;
+        // Nothing on the line can flex in this flex factor so there's nothing
+        // to do — leave the item at its hypothetical main size. Given that we
+        // freeze inflexible items in step 2 the chance we'll get into this
+        // situation is rare, but is possible with a > 0 shrink, and a basis of
+        // 0.
+        rawTarget = boundAxisWithinMinAndMax(
+                        child,
+                        direction,
+                        mainAxis,
+                        FloatOptional{basis},
+                        mainAxisOwnerSize,
+                        ownerWidth)
+                        .unwrap();
       }
 
+      // Fix and track min/max violations on our target main size (spec step
+      // 4d). boundAxis makes sure we're both within our min/max, and that we're
+      // floored to our content box.
       const float clamped = boundAxis(
           child,
           mainAxis,
@@ -796,35 +819,45 @@ static std::vector<float> resolveFlexLengths(
           rawTarget,
           availableInnerMainDim,
           availableInnerWidth);
-      violations[i] = {clamped, clamped - rawTarget};
-      totalViolation += violations[i].amount;
+      spaceAllocations[i] = {clamped, clamped - rawTarget};
+      totalViolation += spaceAllocations[i].violationAmount;
     }
 
-    // Freeze items per the net-violation rule (spec step 4e):
-    // positive total → freeze min-violated items only;
-    // negative total → freeze max-violated items only;
-    // zero → freeze all (no violations remain).
-    bool anyFrozen = false;
+    // Freeze over-flexed items according to spec step 4e's rules:
+    // - If totalViolation is 0 freeze every item (no violations, or they cancel
+    //   each other out).
+    // - If totalViolation is > 0 freeze items with min violations
+    //   (violationAmount > 0).
+    // - If totalViolation is < 0 freeze items with max violations
+    //   (violationAmount < 0).
     for (size_t i = 0; i < itemsInLine; i++) {
       if (states[i].frozen) {
         continue;
       }
-      const float v = violations[i].amount;
-      const bool freeze = (totalViolation > 0.0f && v > 0.0f) ||
-          (totalViolation < 0.0f && v < 0.0f) || totalViolation == 0.0f;
+
+      const float violationAmount = spaceAllocations[i].violationAmount;
+      const bool freeze = totalViolation == 0.0f ||
+                          (totalViolation > 0.0f && violationAmount > 0.0f) ||
+                          (totalViolation < 0.0f && violationAmount < 0.0f);
+
       if (freeze) {
-        states[i].resolvedSize = violations[i].clampedTarget;
-        spaceDelta += violations[i].clampedTarget -
+        states[i].resolvedSize = spaceAllocations[i].targetMainSize;
+        // Like when freezing inflexible items at the start, track how much
+        // space we've just used for this item. Likewise, since initialFreeSpace
+        // counts flexible items at their raw flex base size we need to subtract
+        // that from the size we just allocated to keep the space tracking
+        // consistent (and not double count that space).
+        spaceDelta += spaceAllocations[i].targetMainSize -
             flexLine.itemsInFlow[i]->getLayout().computedFlexBasis.unwrap();
         states[i].frozen = true;
-        anyFrozen = true;
       }
-    }
-    if (!anyFrozen) {
-      break; // safety guard
     }
   }
 
+  // Spec step 5. We return the resolved sizes for each item so the next stage
+  // of the algorithm can apply them to the nodes (and set the cross-axis size).
+  // We also set remainingFreeSpace on the line to account for the space we
+  // distributed across the items.
   std::vector<float> resolvedSizes(itemsInLine);
   for (size_t i = 0; i < itemsInLine; i++) {
     resolvedSizes[i] = states[i].resolvedSize;
