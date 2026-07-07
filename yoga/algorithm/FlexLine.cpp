@@ -89,7 +89,7 @@ FlexLine calculateFlexLine(
     // Flexible items use their raw flex basis here, matching the spec's use of
     // flex base size (not hypothetical main size) for the initial free space
     // calculation. Non-flexible items are immediately frozen at their hypothetical
-    // main size, so they continue to use the clamped value.
+    // main size, so they use the clamped value.
     const float sizeConsumedBasis = child->isNodeFlexible()
         ? child->getLayout().computedFlexBasis.unwrap()
         : flexBasisWithMinAndMaxConstraints;

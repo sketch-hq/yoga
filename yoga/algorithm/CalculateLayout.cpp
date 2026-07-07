@@ -607,13 +607,8 @@ static float computeFlexBasisForChildren(
   return totalOuterFlexBasis;
 }
 
-// Resolves the flex lengths of all items on the line using the CSS Flexbox
-// spec's iterative algorithm (§9.7 "Resolve Flexible Lengths"). Items are
-// distributed simultaneously in each iteration and frozen using a net-violation
-// rule: only min-violated items are frozen when total violation is positive,
-// only max-violated items when negative, and all items when zero. This avoids
-// the NaN/divide-by-zero that can occur when both min and max violations are
-// greedily frozen in a single pass.
+// Resolves the flex lengths of all items on the line using the algorithm from
+// section 9.7 of the CSS Flexbox spec.
 //
 // Returns a vector of resolved main-axis sizes indexed by position in
 // flexLine.itemsInFlow. Also updates flexLine.layout.remainingFreeSpace to
@@ -634,9 +629,10 @@ static std::vector<float> resolveFlexLengths(
   // if the sum of their outer hypothetical main sizes fits within the
   // container's inner main size, otherwise they shrink.
   //
-  // That comparison only makes sense when the container has a real main-axis
-  // constraint. If the container is sized to its content, or its main size is
-  // indefinite, there is nothing to overflow, so we always grow.
+  // That comparison only makes sense when the container has a definite
+  // main-axis constraint though. If the container is sized to its content, or
+  // its main size is indefinite, there is nothing to overflow, so we always
+  // grow.
   const bool usingFlexGrowFactor = sizeBasedOnContent ||
       !yoga::isDefined(availableInnerMainDim) ||
       availableInnerMainDim >= flexLine.sizeConsumedHypothetical;
@@ -645,7 +641,8 @@ static std::vector<float> resolveFlexLengths(
 
   // Tracks the state of an item as we repeatedly iterate the line.
   struct ItemState {
-    // Is the item's size frozen?
+
+    // Is the item's resolvedSize frozen?
     bool frozen = false;
 
     // The current size of the item (may still change if not frozen).
@@ -662,8 +659,10 @@ static std::vector<float> resolveFlexLengths(
   };
   std::vector<ItemState> states(itemsInLine);
 
-  // How much space we've taken from or given back to the available space on the
-  // line.
+  // The net amount of space we've taken from or given back to the available
+  // space on the line. For example, if an item grows by 10, but another is
+  // made 5 smaller than its flex base size due to that base size violating its
+  // max size this variable would be 5 (10 - 5).
   float spaceDelta = 0.0f;
 
   // (Step 2 isn't a "step".)
@@ -695,13 +694,13 @@ static std::vector<float> resolveFlexLengths(
       states[i].frozen = true;
       states[i].resolvedSize = hypothetical;
 
-      // initialFreeSpace counts flexible items at their raw flex base size,
-      // but this item is now frozen at its _hypothetical_ main size. Record the
-      // difference in our running total of used space so the remaining free
-      // space stays consistent. Non-flexible items were already counted at
-      // their hypothetical size, so they need no adjustment. This is necessary
-      // to not break broader uses of remainingFreeSpace (by having it count
-      // items differently), and have future calculations in this function
+      // initialFreeSpace below counts flexible items at their raw flex base
+      // size, but this item is now frozen at its _hypothetical_ main size.
+      // Record the difference in our running total of used space so the
+      // remaining free space stays consistent. Non-flexible items were already
+      // counted at their hypothetical size, so they need no adjustment. This is
+      // necessary to not break broader uses of remainingFreeSpace (by having it
+      // count items differently), and have future calculations in this function
       // behave correctly.
       if (child->isNodeFlexible()) {
         spaceDelta += hypothetical - basis;
@@ -806,10 +805,10 @@ static std::vector<float> resolveFlexLengths(
         }
       } else {
         // Nothing on the line can flex in this flex factor so there's nothing
-        // to do — leave the item at its hypothetical main size. Given that we
-        // freeze inflexible items in step 3 the chance we'll get into this
-        // situation is rare, but is possible with a > 0 shrink, and a basis of
-        // 0.
+        // to do, and we should leave the item at its hypothetical main size.
+        // Given that we freeze inflexible items in step 3 the chance we'll get
+        // into this situation is rare, but is possible with a > 0 shrink, and a
+        // basis of 0.
         rawTarget = boundAxisWithinMinAndMax(
                         child,
                         direction,
