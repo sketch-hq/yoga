@@ -17,7 +17,7 @@ include(${YOGA_ROOT}/cmake/project-defaults.cmake)
 # Fetch GTest
 FetchContent_Declare(
   googletest
-  URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+  URL https://github.com/google/googletest/archive/8b53336594cc52213c6c2c7a0b29194fa896d039.zip
 )
 FetchContent_MakeAvailable(googletest)
 
