@@ -95,15 +95,13 @@ static void computeFlexBasisForChild(
       child->hasDefiniteLength(Dimension::Height, ownerHeight);
 
   if (resolvedFlexBasis.isDefined() && yoga::isDefined(mainAxisSize)) {
-    if (child->getLayout().computedFlexBasis.isUndefined() ||
-        (child->getConfig()->isExperimentalFeatureEnabled(
-             ExperimentalFeature::WebFlexBasis) &&
-         child->getLayout().computedFlexBasisGeneration != generationCount)) {
-      const FloatOptional paddingAndBorder = FloatOptional(
-          paddingAndBorderForAxis(child, mainAxis, direction, ownerWidth));
-      child->setLayoutComputedFlexBasis(
-          yoga::maxOrDefined(resolvedFlexBasis, paddingAndBorder));
-    }
+    // A previous intrinsic measurement may have cached a content-based basis.
+    // Once the main-axis size is known, use the explicit basis so nested gaps
+    // do not affect the distribution between equal-fill siblings (MAC-10387).
+    const FloatOptional paddingAndBorder = FloatOptional(
+        paddingAndBorderForAxis(child, mainAxis, direction, ownerWidth));
+    child->setLayoutComputedFlexBasis(
+        yoga::maxOrDefined(resolvedFlexBasis, paddingAndBorder));
   } else if (isMainAxisRow && isRowStyleDimDefined) {
     // The width is definite, so use that as the flex basis.
     const FloatOptional paddingAndBorder =
